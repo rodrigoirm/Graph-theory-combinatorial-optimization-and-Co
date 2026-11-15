@@ -2,17 +2,20 @@ import numpy as np
 from collections.abc import Hashable
 
 
+
 class _BaseGraph[T: Hashable]:
     """
     Base class for directed and undirected graphs and multigraphs.
 
-    Vertices are specified as dictionary keys, while the corresponding
-    values are lists of adjacent vertices.
+    Vertices are inferred from both the dictionary keys and their
+    adjacency lists. Vertices appearing only in adjacency lists are
+    automatically added to the graph.
 
     For directed graphs, each adjacency list specifies outgoing edges.
-    For undirected graphs, each edge must be specified exactly once;
-    reverse adjacency entries are automatically generated.
+    For undirected graphs, reverse adjacency entries are automatically
+    generated.
 
+    Each occurrence of a neighbor in the input represents one edge.
     Every edge receives a unique integer identifier, allowing parallel
     edges to be distinguished.
 
@@ -21,8 +24,12 @@ class _BaseGraph[T: Hashable]:
     Parameters
     ----------
     G : dict[T, list[T]]
-        Dictionary representing the graph. Every vertex appearing in
-        an adjacency list must also be a key in G.
+        Dictionary representing the graph. Vertices may appear as
+        dictionary keys, in adjacency lists, or both. Vertices that
+        appear only in adjacency lists are automatically included.
+
+        Isolated vertices must be explicitly declared as keys with
+        empty adjacency lists.
 
     directed : bool, optional
         Whether the graph is directed. Defaults to False.
@@ -33,14 +40,15 @@ class _BaseGraph[T: Hashable]:
         Whether the graph is directed.
 
     vertices : tuple[T, ...]
-        Vertices of the graph, ordered according to their appearance
-        in the input dictionary.
+        Vertices of the graph. Dictionary keys appear first, in
+        insertion order, followed by newly discovered vertices
+        in order of their first appearance in adjacency lists.
 
     encoded_vertices : dict[T, int]
         Mapping from vertices to consecutive integer labels,
         starting at zero.
 
-    g : dict[T, list[T]]
+    adj_list_rep : dict[T, list[T]]
         Internal adjacency-list representation of the graph.
         For undirected graphs, adjacency lists are symmetric.
 
@@ -61,67 +69,94 @@ class _BaseGraph[T: Hashable]:
     Notes
     -----
     The graph structure is assumed to remain fixed after initialization.
-    Modifying g or adj_edge_ids directly may cause inconsistencies
-    between the different representations.
+    Modifying adj_list_rep or adj_edge_ids directly may cause
+    inconsistencies between the different representations.
 
-    The class attribute allows_parallel_edges determines whether parallel
-    edges are permitted. Its value is defined by subclasses.
+    The class attribute allows_parallel_edges determines whether
+    parallel edges are permitted. Its value is defined by subclasses.
 
     For an undirected multigraph, specifying both (u, v) and (v, u)
     in the input dictionary creates two distinct parallel edges.
+
+    For directed graphs, vertices appearing only in adjacency lists
+    have no outgoing edges unless explicitly specified otherwise.
     """
 
     allows_parallel_edges: bool = False
 
     def __init__(self, G: dict[T, list[T]], directed: bool = False) -> None:
         self.directed = directed
-        self.vertices = tuple(G)
-        self.encoded_vertices: dict[T, int] = {vertex: i for i, vertex in enumerate(self.vertices)}
 
-        # Edges register: edge_id -> (tail, head), I'm using this terminology even for undirected graphs
-        self._edges: dict[int, tuple[T, T]] = {}
-
-        # Representation of G using an adjacency list for each vertex
-        self.g: dict[T, list[T]] = {vertex: [] for vertex in self.vertices}
-
-        # Adjacency lists containing edge identifiers
-        self.adj_edge_ids: dict[T, list[int]] = {vertex: [] for vertex in self.vertices}
-
-        # A set used to store which edges were already seen
-        seen: set[tuple[T, T]] = set()
+        # Infer vertices from dictionary keys and adjacency lists.
+        vertices = list(G)
+        seen_vertices = set(vertices)
 
         for u, neighbors in G.items():
             if not isinstance(neighbors, list):
-                raise TypeError(f"Expected a list of neighbors for vertex {u!r}")
+                raise TypeError(
+                    f"Expected a list of neighbors for vertex {u!r}"
+                )
 
             for v in neighbors:
                 if not isinstance(v, Hashable):
                     raise TypeError(f"Neighbor {v!r} is not hashable")
-                if v not in self.encoded_vertices:
-                    raise ValueError(f"Unknown vertex {v!r}")
 
-                # Standard way to represent endpoints for duplicate detection.
-                if directed or (self.encoded_vertices[u] <= self.encoded_vertices[v]):
+                if v not in seen_vertices:
+                    seen_vertices.add(v)
+                    vertices.append(v)
+
+        self.vertices: tuple[T, ...] = tuple(vertices)
+
+        self.encoded_vertices: dict[T, int] = {
+            vertex: i for i, vertex in enumerate(self.vertices)
+        }
+
+        # Edge registry: edge_id -> (tail, head).
+        # This terminology is also used for undirected graphs.
+        self._edges: dict[int, tuple[T, T]] = {}
+
+        # Representation of G using adjacency lists.
+        self.adj_list_rep: dict[T, list[T]] = {
+            vertex: [] for vertex in self.vertices
+        }
+
+        # Adjacency lists containing edge identifiers.
+        self.adj_edge_ids: dict[T, list[int]] = {
+            vertex: [] for vertex in self.vertices
+        }
+
+        # Store previously encountered edges for duplicate detection.
+        seen_edges: set[tuple[T, T]] = set()
+
+        for u, neighbors in G.items():
+            for v in neighbors:
+
+                # Canonical representation for duplicate detection.
+                if directed or (
+                    self.encoded_vertices[u] <= self.encoded_vertices[v]
+                ):
                     edge = (u, v)
                 else:
                     edge = (v, u)
 
-                if not self.allows_parallel_edges and edge in seen:
-                    raise ValueError(f"Parallel edge detected: {edge!r}")
+                if not self.allows_parallel_edges and edge in seen_edges:
+                    raise ValueError(
+                        f"Parallel edge detected: {edge!r}"
+                    )
 
-                seen.add(edge)
+                seen_edges.add(edge)
 
-                # Add an identifier to the new edge.
+                # Assign a unique identifier to the new edge.
                 edge_id = len(self._edges)
                 self._edges[edge_id] = (u, v)
 
-                # Update adjacency list representation.
-                self.g[u].append(v)
+                # Update adjacency-list representations.
+                self.adj_list_rep[u].append(v)
                 self.adj_edge_ids[u].append(edge_id)
 
                 # Add reverse adjacency for undirected edges.
                 if not directed and u != v:
-                    self.g[v].append(u)
+                    self.adj_list_rep[v].append(u)
                     self.adj_edge_ids[v].append(edge_id)
 
     @property
@@ -153,6 +188,7 @@ class _BaseGraph[T: Hashable]:
         for u, v in self._edges.values():
             i = self.encoded_vertices[u]
             j = self.encoded_vertices[v]
+
             if self.directed:
                 adjacency_matrix[i, j] += 1
             elif i == j:
@@ -162,6 +198,7 @@ class _BaseGraph[T: Hashable]:
                 adjacency_matrix[j, i] += 1
 
         return adjacency_matrix
+
 
 class Graph[T: Hashable](_BaseGraph[T]):
     """

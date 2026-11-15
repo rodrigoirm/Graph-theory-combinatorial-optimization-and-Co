@@ -6,28 +6,26 @@ these same vertices.
 If you just want to create a path from an edge progression,
 without working with an underlying graph, use the following function.
 
-construct_path_from_ep()
+    construct_path_from_ep()
 
-Input: a sequence of edges.
+        Input: a sequence of edges.
 
-Output: returns a path from the first to the last element of a
-        sequence of edges.
+        Output: returns a path from the first to the last element of a
+                sequence of edges.
 
         ATTENTION: this function does not check whether the sequence
                    is actually an edge progression. 
 
 If you are explicitly working with a graph G and wish
-to construct a path in it from an edge progression, use
-the following function.
+to construct a path from an edge progression, use
+the following function:
 
-edge_progression_path():
+    edge_progression_path():
 
-Input: a graph or a multigraph and a sequence of edges.
+        Input: a graph or a multigraph and a sequence of edges.
 
-Output: if the sequence is an edge progression, returns a path from 
-        the first to the last element of thiss sequence.
-
-
+        Output: if the sequence is an edge progression, returns a path from 
+                the first to the last element of the input sequence.
 """
 
 from graph_module.graph_class import Graph, MultiGraph
