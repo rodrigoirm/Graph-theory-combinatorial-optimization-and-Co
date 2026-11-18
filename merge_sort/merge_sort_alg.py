@@ -6,7 +6,7 @@ def merge_sort(L: list[float]) -> list[int]:
     Returns:
         pi: a list such that L[pi[k]] <= L[pi[k+1]] for all k=0,...,len(L)-1.
     """
-    #I am constructed merge_sort exactly as presented in Korte & Vygen (6ed)
+    #I constructed merge_sort exactly as presented in Korte & Vygen (6ed)
     n = len(L)
     if n <= 1:
         return list(range(n))

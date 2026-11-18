@@ -93,9 +93,7 @@ class _BaseGraph[T: Hashable]:
 
         for u, neighbors in G.items():
             if not isinstance(neighbors, list):
-                raise TypeError(
-                    f"Expected a list of neighbors for vertex {u!r}"
-                )
+                raise TypeError(f"Expected a list of neighbors for vertex {u!r}")
 
             for v in neighbors:
                 if not isinstance(v, Hashable):
@@ -140,9 +138,7 @@ class _BaseGraph[T: Hashable]:
                     edge = (v, u)
 
                 if not self.allows_parallel_edges and edge in seen_edges:
-                    raise ValueError(
-                        f"Parallel edge detected: {edge!r}"
-                    )
+                    raise ValueError(f"Parallel edge detected: {edge!r}")
 
                 seen_edges.add(edge)
 
